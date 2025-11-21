@@ -1,4 +1,3 @@
-
 import os
 import logging
 import time
@@ -11,7 +10,7 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultPhoto, InputTextMessageContent
 
 # Config
-TELEGRAM_BOT_TOKEN = '7454681736:AAE6wnHDCcTXss5VFPwP0GzTDpcEQrcWdcg'  # MUST be set in env
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')  # MUST be set in env
 ADMIN_ID = 5707638365
 ADMIN_TOKEN = 'Admin'  # weak by design — change in production
 DB_PATH = 'waifu_bot.db'
@@ -152,8 +151,8 @@ async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: 
     params = {}
     if tag:
         params['included_tags'] = tag
-    params['many'] = limit
-    params['is_nsfw'] = 1 if nsfw else 0
+    params['limit'] = limit
+    params['is_nsfw'] = 'true' if nsfw else 'false'
     async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
         data = await resp.json()
     return data.get('images') or []
@@ -506,4 +505,3 @@ async def on_startup(dp):
 
 if __name__ == '__main__':
     executor.start_polling(dp, on_startup=on_startup)
-
