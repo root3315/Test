@@ -127,17 +127,6 @@ async def get_settings_menu(user_id: int):
     return kb
 
 # ---------------- API ----------------
-async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
-    params = {'limit': limit}
-    if tag:
-        params['included_tags'] = [tag]  # API требует список
-    params['is_nsfw'] = 'true' if nsfw else 'false'  # ⚡ исправлено: строка 'true'/'false'
-    
-    async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"API error {resp.status}")
-        data = await resp.json()
-    return data.get('images', [])
 
 # ---------------- SEND IMAGE ----------------
 async def send_by_tag(message_or_query, tag, bot, user_id):
@@ -160,7 +149,19 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
             return
 
         im = images[0]
-        url = im.get('url') or im.get('image_url') or im.get('source_url')
+ async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
+    params = {'limit': limit, 'is_nsfw': 'true' if nsfw else 'false'}
+    
+    if tag:
+        # API хочет строку тегов, разделённых запятыми, даже если один тег
+        params['included_tags'] = tag  
+
+    async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"API error {resp.status}")
+        data = await resp.json()
+    return data.get('images', [])
+     url = im.get('url') or im.get('image_url') or im.get('source_url')
         if not url:
             await message_or_query.reply('Не удалось получить URL картинки.')
             return
