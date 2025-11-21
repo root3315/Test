@@ -1,3 +1,4 @@
+```python
 import os
 import logging
 import time
@@ -5,7 +6,7 @@ import hashlib
 import asyncio
 import aiohttp
 import aiosqlite
-from typing import Optional, List, Dict
+from typing import Optional, List
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultPhoto, InputTextMessageContent
 
@@ -102,7 +103,7 @@ async def add_favorite(user_id: int, url: str, local_path: str):
         await db.execute('INSERT INTO favorites(user_id, url, local_path, added_at) VALUES (?, ?, ?, ?)', (user_id, url, local_path or url, int(time.time())))
         await db.commit()
 
-async def list_favorites(user_id: int, offset: int = 0, limit: int = 10) -> List[tuple]:
+async def list_favorites(user_id: int, offset: int = 0, limit: int = 10) -> list[tuple]:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute('SELECT id, url, local_path, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT ? OFFSET ?', (user_id, limit, offset))
         rows = await cur.fetchall()
@@ -147,7 +148,7 @@ async def export_favorites_csv(path: str):
 # Utils
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
-async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> List[dict]:
+async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
     params = {}
     if tag:
         params['included_tags'] = tag
@@ -245,6 +246,18 @@ async def cmd_export_favs(message: types.Message):
     await export_favorites_csv(path)
     await message.reply_document(open(path, 'rb'))
 
+async def cmd_admin(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.reply('Только админ может использовать эту команду.')
+        return
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(InlineKeyboardButton('Stats 📊', callback_data='admin_stats'))
+    kb.add(InlineKeyboardButton('Broadcast 📢', callback_data='admin_broadcast'))
+    kb.add(InlineKeyboardButton('Ban 🚫', callback_data='admin_ban'))
+    kb.add(InlineKeyboardButton('Unban ✅', callback_data='admin_unban'))
+    kb.add(InlineKeyboardButton('Export Favs 📁', callback_data='admin_export'))
+    await message.answer('Админ панель:', reply_markup=kb)
+
 # Handlers
 USER_LAST_TIME = {}
 
@@ -335,6 +348,21 @@ async def handle_callback(query: types.CallbackQuery, bot):
                 await query.answer('Ошибка добавления в избранное.')
     elif data == 'next':
         await send_by_tag(query.message, None, bot, user_id)  # random next
+    elif data.startswith('admin_'):
+        if user_id != ADMIN_ID:
+            await query.answer('Только админ.')
+            return
+        action = data.split('_')[1]
+        if action == 'stats':
+            await cmd_stats(query.message, bot)
+        elif action == 'broadcast':
+            await query.message.reply('Используйте /broadcast <text> для рассылки.')
+        elif action == 'ban':
+            await query.message.reply('Используйте /ban <user_id> для бана.')
+        elif action == 'unban':
+            await query.message.reply('Используйте /unban <user_id> для разбана.')
+        elif action == 'export':
+            await cmd_export_favs(query.message)
     await query.answer()
 
 async def show_favorites(message: types.Message, user_id: int, bot, page: int = 0):
@@ -383,20 +411,18 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
         url = im.get('url') or im.get('image_url') or im.get('source_url')
         checksum = hashlib.sha1(url.encode()).hexdigest()
         local = None
-        try:
-            local = await download_image(session, url)
-        except Exception:
-            pass
+        # Comment out download to avoid permission issues; send URL directly
+        # try:
+        #     local = await download_image(session, url)
+        # except Exception as e:
+        #     logging.error(f"Download failed: {e}")
         caption = f"Tag: {tag or 'random'} | {'🔞 NSFW' if nsfw else '✅ SFW'} 🎨"
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton('Save ❤️', callback_data=f'fav:{checksum}'),  
                InlineKeyboardButton('Next ▶', callback_data='next'),
                InlineKeyboardButton('Share 🔗', switch_inline_query=url))
         chat_id = message_or_query.chat.id if hasattr(message_or_query, 'chat') else message_or_query.chat_id
-        if local and os.path.exists(local):
-            await bot.send_photo(chat_id, types.InputFile(local), caption=caption, reply_markup=kb)
-        else:
-            await bot.send_photo(chat_id, url, caption=caption, reply_markup=kb)
+        await bot.send_photo(chat_id, url, caption=caption, reply_markup=kb)
         await record_event(user_id, 'served_api', tag or 'random')
 
 async def inline_query(inline_query: types.InlineQuery):
@@ -438,6 +464,10 @@ async def _start(msg: types.Message):
 async def _menu(msg: types.Message):
     await cmd_menu(msg)
 
+@dp.message_handler(commands=['admin'])
+async def _admin_cmd(msg: types.Message):
+    await cmd_admin(msg)
+
 @dp.message_handler(commands=['stats'])
 async def _stats(msg: types.Message):
     await cmd_stats(msg, bot)
@@ -476,3 +506,4 @@ async def on_startup(dp):
 
 if __name__ == '__main__':
     executor.start_polling(dp, on_startup=on_startup)
+```
