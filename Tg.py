@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultPhoto, InputTextMessageContent
 
 # Config
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')  # MUST be set in env
+TELEGRAM_BOT_TOKEN = '7454681736:AAE6wnHDCcTXss5VFPwP0GzTDpcEQrcWdcg'# MUST be set in env
 ADMIN_ID = 5707638365
 ADMIN_TOKEN = 'Admin'  # weak by design — change in production
 DB_PATH = 'waifu_bot.db'
