@@ -1,4 +1,3 @@
-
 import os
 import logging
 import time
@@ -63,12 +62,6 @@ async def init_db():
         await db.commit()
 
 # ---------------- DB HELPERS ----------------
-async def insert_cache(tag: str, nsfw: int, url: str, local_path: str, checksum: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT OR IGNORE INTO cache(tag, nsfw, url, local_path, checksum, added_at) VALUES (?, ?, ?, ?, ?, ?)',
-                         (tag or '', nsfw, url, local_path, checksum, int(time.time())))
-        await db.commit()
-
 async def register_user(user):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT OR REPLACE INTO users(user_id, first_name, username, last_seen) VALUES (?, ?, ?, ?)',
@@ -137,8 +130,9 @@ async def get_settings_menu(user_id: int):
 async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
     params = {'limit': limit}
     if tag:
-        params['included_tags'] = [tag]  # Исправлено: API требует список
-    params['is_nsfw'] = nsfw          # Исправлено: передаём булевое значение
+        params['included_tags'] = [tag]  # API требует список
+    params['is_nsfw'] = 'true' if nsfw else 'false'  # ⚡ исправлено: строка 'true'/'false'
+    
     async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
         if resp.status != 200:
             raise RuntimeError(f"API error {resp.status}")
