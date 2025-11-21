@@ -106,7 +106,7 @@ async def get_settings_menu(user_id: int):
     return kb
 
 # ---------------- API ----------------
-async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
+async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 2) -> list[dict]:
     params = {
         'limit': limit,
         'is_nsfw': 'true' if nsfw else 'false'
