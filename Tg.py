@@ -7,7 +7,7 @@ import aiohttp
 import aiosqlite
 from typing import Optional
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultPhoto
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ---------------- CONFIG ----------------
 TELEGRAM_BOT_TOKEN = '7454681736:AAE6wnHDCcTXss5VFPwP0GzTDpcEQrcWdcg'
@@ -23,22 +23,6 @@ LOG_LEVEL = 'INFO'
 # ---------------- DB ----------------
 CREATE_SCHEMA = '''
 PRAGMA foreign_keys = ON;
-CREATE TABLE IF NOT EXISTS cache (
-    id INTEGER PRIMARY KEY,
-    tag TEXT,
-    nsfw INTEGER,
-    url TEXT UNIQUE,
-    local_path TEXT,
-    checksum TEXT UNIQUE,
-    added_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS favorites (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER,
-    url TEXT,
-    local_path TEXT,
-    added_at INTEGER
-);
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     first_name TEXT,
@@ -64,8 +48,10 @@ async def init_db():
 # ---------------- DB HELPERS ----------------
 async def register_user(user):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT OR REPLACE INTO users(user_id, first_name, username, last_seen) VALUES (?, ?, ?, ?)',
-                         (user.id, user.first_name or '', user.username or '', int(time.time())))
+        await db.execute(
+            'INSERT OR REPLACE INTO users(user_id, first_name, username, last_seen) VALUES (?, ?, ?, ?)',
+            (user.id, user.first_name or '', user.username or '', int(time.time()))
+        )
         await db.commit()
 
 async def get_user_pref_sfw(user_id: int) -> int:
@@ -81,8 +67,10 @@ async def set_user_pref_sfw(user_id: int, pref: int):
 
 async def record_event(user_id: int, event_type: str, detail: str = ''):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT INTO events(user_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)',
-                         (user_id, event_type, detail, int(time.time())))
+        await db.execute(
+            'INSERT INTO events(user_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)',
+            (user_id, event_type, detail, int(time.time()))
+        )
         await db.commit()
 
 async def is_banned(user_id: int) -> bool:
@@ -92,7 +80,6 @@ async def is_banned(user_id: int) -> bool:
         return bool(row and row[0])
 
 # ---------------- UTILS ----------------
-os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 USER_LAST_TIME = {}
 
 def is_rate_limited(uid: int) -> bool:
@@ -108,7 +95,6 @@ def get_main_menu():
     kb.add(InlineKeyboardButton(f"Random {MENU_EMOJI['random']}", callback_data='random'))
     kb.add(InlineKeyboardButton(f"Tags {MENU_EMOJI['tags']}", callback_data='tags'))
     kb.add(InlineKeyboardButton(f"Settings {MENU_EMOJI['settings']}", callback_data='settings'))
-    kb.add(InlineKeyboardButton(f"Favorites {MENU_EMOJI['favorites']}", callback_data='favorites'))
     return kb
 
 def get_tags_menu():
@@ -127,6 +113,15 @@ async def get_settings_menu(user_id: int):
     return kb
 
 # ---------------- API ----------------
+async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
+    params = {'limit': limit, 'is_nsfw': 'true' if nsfw else 'false'}
+    if tag:
+        params['included_tags'] = tag  # ⚡ исправлено: передаем строку, не список
+    async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"API error {resp.status}")
+        data = await resp.json()
+    return data.get('images', [])
 
 # ---------------- SEND IMAGE ----------------
 async def send_by_tag(message_or_query, tag, bot, user_id):
@@ -149,19 +144,7 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
             return
 
         im = images[0]
- async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
-    params = {'limit': limit, 'is_nsfw': 'true' if nsfw else 'false'}
-    
-    if tag:
-        # API хочет строку тегов, разделённых запятыми, даже если один тег
-        params['included_tags'] = tag  
-
-    async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"API error {resp.status}")
-        data = await resp.json()
-    return data.get('images', [])
-     url = im.get('url') or im.get('image_url') or im.get('source_url')
+        url = im.get('url') or im.get('image_url') or im.get('source_url')
         if not url:
             await message_or_query.reply('Не удалось получить URL картинки.')
             return
@@ -171,7 +154,6 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
 
         kb = InlineKeyboardMarkup()
         kb.add(
-            InlineKeyboardButton('Save ❤️', callback_data=f'fav:{checksum}'),
             InlineKeyboardButton('Next ▶', callback_data='next'),
             InlineKeyboardButton('Share 🔗', switch_inline_query=url)
         )
@@ -183,8 +165,10 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
 # ---------------- HANDLERS ----------------
 async def cmd_start(message: types.Message):
     await register_user(message.from_user)
-    await message.answer(f"Привет, {message.from_user.first_name}! 🌟 Я Waifu бот. Выбери опцию ниже! 🎉",
-                         reply_markup=get_main_menu())
+    await message.answer(
+        f"Привет, {message.from_user.first_name}! 🌟 Я Waifu бот. Выбери опцию ниже! 🎉",
+        reply_markup=get_main_menu()
+    )
 
 async def cmd_menu(message: types.Message):
     await message.answer('Главное меню:', reply_markup=get_main_menu())
