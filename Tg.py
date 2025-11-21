@@ -106,14 +106,14 @@ async def get_settings_menu(user_id: int):
     return kb
 
 # ---------------- API ----------------
-async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 2) -> list[dict]:
+async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
     params = {
-        'limit': limit,
         'is_nsfw': 'true' if nsfw else 'false'
     }
     if tag:
-        # ⚡ передаем тег как строку (API требует именно строку)
-        params['included_tags'] = str(tag)
+        params['included_tags'] = tag
+    if limit > 1:
+        params['limit'] = limit
     async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
         if resp.status != 200:
             text = await resp.text()
