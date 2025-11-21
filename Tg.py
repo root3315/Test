@@ -5,7 +5,7 @@ import hashlib
 import asyncio
 import aiohttp
 import aiosqlite
-from typing import Optional, List, dict
+from typing import Optional, List, Dict
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultPhoto, InputTextMessageContent
 
