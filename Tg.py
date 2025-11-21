@@ -11,23 +11,20 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ---------------- CONFIG ----------------
 TELEGRAM_BOT_TOKEN = '7454681736:AAE6wnHDCcTXss5VFPwP0GzTDpcEQrcWdcg'
-ADMIN_ID = 5707638365
 DB_PATH = 'waifu_bot.db'
-IMAGE_CACHE_DIR = 'image_cache'
 WAIFU_API_URL = 'https://api.waifu.im/search'
 DEFAULT_TAGS = ['waifu', 'neko', 'maid', 'smile', 'megane', 'uniform', 'school_uniform']
-RATE_LIMIT_SECONDS = 0.8
-MENU_EMOJI = {'random': '🎲', 'tags': '🏷️', 'settings': '⚙️', 'favorites': '❤️', 'nsfw': '🔞', 'sfw': '✅'}
+RATE_LIMIT_SECONDS = 1.0
+MENU_EMOJI = {'random': '🎲', 'tags': '🏷️', 'settings': '⚙️', 'sfw': '✅', 'nsfw': '🔞'}
 LOG_LEVEL = 'INFO'
 
-# ---------------- DB ----------------
+# ---------------- DATABASE ----------------
 CREATE_SCHEMA = '''
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     first_name TEXT,
     username TEXT,
-    is_banned INTEGER DEFAULT 0,
     pref_sfw INTEGER DEFAULT 1,
     last_seen INTEGER
 );
@@ -45,7 +42,6 @@ async def init_db():
         await db.executescript(CREATE_SCHEMA)
         await db.commit()
 
-# ---------------- DB HELPERS ----------------
 async def register_user(user):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -73,13 +69,7 @@ async def record_event(user_id: int, event_type: str, detail: str = ''):
         )
         await db.commit()
 
-async def is_banned(user_id: int) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute('SELECT is_banned FROM users WHERE user_id = ?', (user_id,))
-        row = await cur.fetchone()
-        return bool(row and row[0])
-
-# ---------------- UTILS ----------------
+# ---------------- RATE LIMIT ----------------
 USER_LAST_TIME = {}
 
 def is_rate_limited(uid: int) -> bool:
@@ -90,11 +80,14 @@ def is_rate_limited(uid: int) -> bool:
     USER_LAST_TIME[uid] = now
     return False
 
+# ---------------- MENUS ----------------
 def get_main_menu():
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(InlineKeyboardButton(f"Random {MENU_EMOJI['random']}", callback_data='random'))
-    kb.add(InlineKeyboardButton(f"Tags {MENU_EMOJI['tags']}", callback_data='tags'))
-    kb.add(InlineKeyboardButton(f"Settings {MENU_EMOJI['settings']}", callback_data='settings'))
+    kb.add(
+        InlineKeyboardButton(f"Random {MENU_EMOJI['random']}", callback_data='random'),
+        InlineKeyboardButton(f"Tags {MENU_EMOJI['tags']}", callback_data='tags'),
+        InlineKeyboardButton(f"Settings {MENU_EMOJI['settings']}", callback_data='settings')
+    )
     return kb
 
 def get_tags_menu():
@@ -114,12 +107,17 @@ async def get_settings_menu(user_id: int):
 
 # ---------------- API ----------------
 async def fetch_waifu(session: aiohttp.ClientSession, tag: Optional[str], nsfw: bool, limit: int = 1) -> list[dict]:
-    params = {'limit': limit, 'is_nsfw': 'true' if nsfw else 'false'}
+    params = {
+        'limit': limit,
+        'is_nsfw': 'true' if nsfw else 'false'
+    }
     if tag:
-        params['included_tags'] = tag  # ⚡ исправлено: передаем строку, не список
+        # ⚡ передаем тег как строку (API требует именно строку)
+        params['included_tags'] = str(tag)
     async with session.get(WAIFU_API_URL, params=params, ssl=True, timeout=20) as resp:
         if resp.status != 200:
-            raise RuntimeError(f"API error {resp.status}")
+            text = await resp.text()
+            raise RuntimeError(f"API error {resp.status}: {text}")
         data = await resp.json()
     return data.get('images', [])
 
@@ -149,9 +147,7 @@ async def send_by_tag(message_or_query, tag, bot, user_id):
             await message_or_query.reply('Не удалось получить URL картинки.')
             return
 
-        checksum = hashlib.sha1(url.encode()).hexdigest()
         caption = f"Tag: {tag or 'random'} | {'🔞 NSFW' if nsfw else '✅ SFW'} 🎨"
-
         kb = InlineKeyboardMarkup()
         kb.add(
             InlineKeyboardButton('Next ▶', callback_data='next'),
@@ -174,12 +170,7 @@ async def cmd_menu(message: types.Message):
     await message.answer('Главное меню:', reply_markup=get_main_menu())
 
 async def handle_text(message: types.Message, bot):
-    if message.text.startswith('/'):
-        return
     await register_user(message.from_user)
-    if await is_banned(message.from_user.id):
-        await message.answer('Вы заблокированы. 🚫')
-        return
     if is_rate_limited(message.from_user.id):
         await message.answer('Подожди секунду! ⏳')
         return
@@ -191,14 +182,15 @@ async def handle_text(message: types.Message, bot):
 async def handle_callback(query: types.CallbackQuery, bot):
     data = query.data
     user_id = query.from_user.id
+
     if data == 'menu':
         await query.message.edit_text('Главное меню:', reply_markup=get_main_menu())
-    elif data == 'random':
+    elif data == 'random' or data == 'next':
         await send_by_tag(query.message, None, bot, user_id)
     elif data == 'tags':
         await query.message.edit_text('Выбери тег:', reply_markup=get_tags_menu())
     elif data.startswith('tag:'):
-        tag = data.split(':', 1)[1]
+        tag = data.split(':',1)[1]
         await send_by_tag(query.message, tag, bot, user_id)
     elif data == 'settings':
         await query.message.edit_text('Настройки:', reply_markup=await get_settings_menu(user_id))
@@ -211,11 +203,6 @@ async def handle_callback(query: types.CallbackQuery, bot):
 
 # ---------------- BOT INIT ----------------
 logging.basicConfig(level=LOG_LEVEL)
-logger = logging.getLogger(__name__)
-
-if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError('Set TELEGRAM_BOT_TOKEN env variable')
-
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher(bot)
 
@@ -237,7 +224,7 @@ async def _callback(query: types.CallbackQuery):
 
 async def on_startup(dp):
     await init_db()
-    logger.info('DB initialized')
+    logging.info('DB initialized')
 
 if __name__ == '__main__':
     executor.start_polling(dp, on_startup=on_startup)
